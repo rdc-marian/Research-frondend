@@ -1,8 +1,21 @@
+"use client";
+
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { PageLayout } from "@/components/PageLayout";
 import { DataTable } from "@/components/Table";
 import { StatusBadge } from "@/components/StatusBadge";
 import { adminNav } from "@/data/roleNav";
+import { apiGet, type ApiListResponse } from "@/lib/api";
+
+type Submission = {
+  _id: string;
+  title: string;
+  department: string;
+  submittedAt?: string;
+  status: string;
+  scholar?: { name?: string };
+};
 
 const columns = [
   { key: "title", label: "Title" },
@@ -13,58 +26,73 @@ const columns = [
   { key: "action", label: "Action", align: "right" as const },
 ];
 
-const rows = [
-  {
-    id: "1",
-    title: "AI in Healthcare",
-    author: "John Smith",
-    department: "Computer Science",
-    submitted: "15 May 2024",
-    status: <StatusBadge status="Pending" />,
-    action: (
-      <Link
-        href="/admin/submissions/details"
-        className="rounded-full border border-[color:var(--border)] px-3 py-1 text-xs font-semibold text-[color:var(--maroon-700)]"
-      >
-        Review
-      </Link>
-    ),
-  },
-  {
-    id: "2",
-    title: "Blockchain for Security",
-    author: "Emily Davis",
-    department: "Information Tech",
-    submitted: "14 May 2024",
-    status: <StatusBadge status="Pending" />,
-    action: (
-      <Link
-        href="/admin/submissions/details"
-        className="rounded-full border border-[color:var(--border)] px-3 py-1 text-xs font-semibold text-[color:var(--maroon-700)]"
-      >
-        Review
-      </Link>
-    ),
-  },
-  {
-    id: "3",
-    title: "Smart Cities and IoT",
-    author: "Michael Brown",
-    department: "Electronics",
-    submitted: "10 May 2024",
-    status: <StatusBadge status="Approved" />,
-    action: (
-      <Link
-        href="/admin/submissions/details"
-        className="rounded-full border border-[color:var(--border)] px-3 py-1 text-xs font-semibold text-[color:var(--maroon-700)]"
-      >
-        Review
-      </Link>
-    ),
-  },
-];
+const formatDate = (value?: string) => {
+  if (!value) return "N/A";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "N/A";
+  return date.toLocaleDateString("en-GB", {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+  });
+};
 
 export default function AdminApprovalsPage() {
+  const [statusFilter, setStatusFilter] = useState("Pending");
+  const [approvals, setApprovals] = useState<Submission[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let isMounted = true;
+
+    const load = async () => {
+      try {
+        setLoading(true);
+        setError(null);
+        const response = await apiGet<ApiListResponse<Submission>>(
+          `/approvals?status=${encodeURIComponent(statusFilter)}`
+        );
+        if (!isMounted) return;
+        setApprovals(response.items);
+      } catch (err) {
+        if (!isMounted) return;
+        const message =
+          err instanceof Error ? err.message : "Failed to load approvals";
+        setError(message);
+      } finally {
+        if (isMounted) setLoading(false);
+      }
+    };
+
+    load();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [statusFilter]);
+
+  const rows = useMemo(
+    () =>
+      approvals.map((submission) => ({
+        id: submission._id,
+        title: submission.title,
+        author: submission.scholar?.name ?? "Unknown",
+        department: submission.department,
+        submitted: formatDate(submission.submittedAt),
+        status: <StatusBadge status={submission.status} />,
+        action: (
+          <Link
+            href="/admin/submissions/details"
+            className="rounded-full border border-[color:var(--border)] px-3 py-1 text-xs font-semibold text-[color:var(--maroon-700)]"
+          >
+            Review
+          </Link>
+        ),
+      })),
+    [approvals]
+  );
+
   return (
     <PageLayout
       title="Approvals"
@@ -86,20 +114,38 @@ export default function AdminApprovalsPage() {
           <div className="flex items-center gap-2 rounded-full border border-[color:var(--border)] p-1">
             <button
               type="button"
-              className="rounded-full bg-[color:var(--maroon-800)] px-4 py-1 text-xs font-semibold text-white"
+              onClick={() => setStatusFilter("Pending")}
+              className={`rounded-full px-4 py-1 text-xs font-semibold ${
+                statusFilter === "Pending"
+                  ? "bg-[color:var(--maroon-800)] text-white"
+                  : "text-slate-500"
+              }`}
             >
               Pending
             </button>
             <button
               type="button"
-              className="rounded-full px-4 py-1 text-xs font-semibold text-slate-500"
+              onClick={() => setStatusFilter("Approved")}
+              className={`rounded-full px-4 py-1 text-xs font-semibold ${
+                statusFilter === "Approved"
+                  ? "bg-[color:var(--maroon-800)] text-white"
+                  : "text-slate-500"
+              }`}
             >
               Approved
             </button>
           </div>
         </div>
         <div className="mt-4">
-          <DataTable columns={columns} rows={rows} />
+          {loading ? (
+            <p className="text-sm text-slate-500">Loading approvals...</p>
+          ) : error ? (
+            <p className="text-sm text-red-600">
+              Failed to load approvals: {error}
+            </p>
+          ) : (
+            <DataTable columns={columns} rows={rows} />
+          )}
         </div>
       </section>
     </PageLayout>

@@ -1,9 +1,22 @@
+"use client";
+
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { Search } from "lucide-react";
 import { PageLayout } from "@/components/PageLayout";
 import { DataTable } from "@/components/Table";
 import { StatusBadge } from "@/components/StatusBadge";
 import { coordinatorNav } from "@/data/roleNav";
+import { apiGet, type ApiListResponse } from "@/lib/api";
+
+type Submission = {
+  _id: string;
+  title: string;
+  department: string;
+  submittedAt?: string;
+  status: string;
+  scholar?: { name?: string };
+};
 
 const columns = [
   { key: "title", label: "Title" },
@@ -14,58 +27,70 @@ const columns = [
   { key: "action", label: "Action", align: "right" as const },
 ];
 
-const rows = [
-  {
-    id: "1",
-    title: "AI in Healthcare",
-    scholar: "Riya Sharma",
-    department: "MCA",
-    submitted: "15 May 2024",
-    status: <StatusBadge status="Pending" />,
-    action: (
-      <Link
-        href="/coordinator/submissions/details"
-        className="rounded-full border border-[color:var(--border)] px-3 py-1 text-xs font-semibold text-[color:var(--maroon-700)]"
-      >
-        Review
-      </Link>
-    ),
-  },
-  {
-    id: "2",
-    title: "Blockchain for Security",
-    scholar: "Aman Verma",
-    department: "MCA",
-    submitted: "14 May 2024",
-    status: <StatusBadge status="Pending" />,
-    action: (
-      <Link
-        href="/coordinator/submissions/details"
-        className="rounded-full border border-[color:var(--border)] px-3 py-1 text-xs font-semibold text-[color:var(--maroon-700)]"
-      >
-        Review
-      </Link>
-    ),
-  },
-  {
-    id: "3",
-    title: "Smart Cities and IoT",
-    scholar: "Neha Gupta",
-    department: "MCA",
-    submitted: "10 May 2024",
-    status: <StatusBadge status="Approved" />,
-    action: (
-      <Link
-        href="/coordinator/submissions/details"
-        className="rounded-full border border-[color:var(--border)] px-3 py-1 text-xs font-semibold text-[color:var(--maroon-700)]"
-      >
-        Review
-      </Link>
-    ),
-  },
-];
+const formatDate = (value?: string) => {
+  if (!value) return "N/A";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "N/A";
+  return date.toLocaleDateString("en-GB", {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+  });
+};
 
 export default function CoordinatorSubmissionsPage() {
+  const [submissions, setSubmissions] = useState<Submission[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let isMounted = true;
+
+    const load = async () => {
+      try {
+        setLoading(true);
+        setError(null);
+        const response = await apiGet<ApiListResponse<Submission>>("/submissions");
+        if (!isMounted) return;
+        setSubmissions(response.items);
+      } catch (err) {
+        if (!isMounted) return;
+        const message =
+          err instanceof Error ? err.message : "Failed to load submissions";
+        setError(message);
+      } finally {
+        if (isMounted) setLoading(false);
+      }
+    };
+
+    load();
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
+  const rows = useMemo(
+    () =>
+      submissions.map((submission) => ({
+        id: submission._id,
+        title: submission.title,
+        scholar: submission.scholar?.name ?? "Unknown",
+        department: submission.department,
+        submitted: formatDate(submission.submittedAt),
+        status: <StatusBadge status={submission.status} />,
+        action: (
+          <Link
+            href="/coordinator/submissions/details"
+            className="rounded-full border border-[color:var(--border)] px-3 py-1 text-xs font-semibold text-[color:var(--maroon-700)]"
+          >
+            Review
+          </Link>
+        ),
+      })),
+    [submissions]
+  );
+
   return (
     <PageLayout
       title="Submissions (MCA)"
@@ -98,7 +123,15 @@ export default function CoordinatorSubmissionsPage() {
           </div>
         </div>
         <div className="mt-4">
-          <DataTable columns={columns} rows={rows} />
+          {loading ? (
+            <p className="text-sm text-slate-500">Loading submissions...</p>
+          ) : error ? (
+            <p className="text-sm text-red-600">
+              Failed to load submissions: {error}
+            </p>
+          ) : (
+            <DataTable columns={columns} rows={rows} />
+          )}
         </div>
       </section>
     </PageLayout>

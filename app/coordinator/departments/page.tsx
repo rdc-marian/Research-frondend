@@ -1,8 +1,20 @@
+"use client";
+
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { Plus, Search } from "lucide-react";
 import { PageLayout } from "@/components/PageLayout";
 import { DataTable } from "@/components/Table";
 import { coordinatorNav } from "@/data/roleNav";
+import { apiGet, type ApiListResponse } from "@/lib/api";
+
+type Department = {
+  _id: string;
+  name: string;
+  email?: string;
+  totalScholars?: number;
+  coordinator?: { name?: string; email?: string };
+};
 
 const columns = [
   { key: "department", label: "Department" },
@@ -12,40 +24,59 @@ const columns = [
   { key: "action", label: "Action", align: "right" as const },
 ];
 
-const rows = [
-  {
-    id: "1",
-    department: "MCA - Master of Computer Applications",
-    head: "Dr. Priya Sharma",
-    email: "priya.sharma@college.edu",
-    total: "28",
-    action: (
-      <Link
-        href="/coordinator/departments/overview"
-        className="rounded-full border border-[color:var(--border)] px-3 py-1 text-xs font-semibold text-[color:var(--maroon-700)]"
-      >
-        View
-      </Link>
-    ),
-  },
-  {
-    id: "2",
-    department: "BCA - Bachelor of Computer Applications",
-    head: "Dr. Rohit Verma",
-    email: "rohit.verma@college.edu",
-    total: "24",
-    action: (
-      <Link
-        href="/coordinator/departments/overview"
-        className="rounded-full border border-[color:var(--border)] px-3 py-1 text-xs font-semibold text-[color:var(--maroon-700)]"
-      >
-        View
-      </Link>
-    ),
-  },
-];
-
 export default function CoordinatorDepartmentsPage() {
+  const [departments, setDepartments] = useState<Department[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let isMounted = true;
+
+    const load = async () => {
+      try {
+        setLoading(true);
+        setError(null);
+        const response = await apiGet<ApiListResponse<Department>>("/departments");
+        if (!isMounted) return;
+        setDepartments(response.items);
+      } catch (err) {
+        if (!isMounted) return;
+        const message =
+          err instanceof Error ? err.message : "Failed to load departments";
+        setError(message);
+      } finally {
+        if (isMounted) setLoading(false);
+      }
+    };
+
+    load();
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
+  const rows = useMemo(
+    () =>
+      departments.map((department) => ({
+        id: department._id,
+        department: department.name,
+        head: department.coordinator?.name ?? "Unassigned",
+        email:
+          department.email || department.coordinator?.email || "N/A",
+        total: `${department.totalScholars ?? 0}`,
+        action: (
+          <Link
+            href="/coordinator/departments/overview"
+            className="rounded-full border border-[color:var(--border)] px-3 py-1 text-xs font-semibold text-[color:var(--maroon-700)]"
+          >
+            View
+          </Link>
+        ),
+      })),
+    [departments]
+  );
+
   return (
     <PageLayout
       title="Departments"
@@ -79,7 +110,15 @@ export default function CoordinatorDepartmentsPage() {
           </div>
         </div>
         <div className="mt-4">
-          <DataTable columns={columns} rows={rows} />
+          {loading ? (
+            <p className="text-sm text-slate-500">Loading departments...</p>
+          ) : error ? (
+            <p className="text-sm text-red-600">
+              Failed to load departments: {error}
+            </p>
+          ) : (
+            <DataTable columns={columns} rows={rows} />
+          )}
         </div>
       </section>
     </PageLayout>
